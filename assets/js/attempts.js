@@ -6,15 +6,13 @@
 import { db } from './firebase.js';
 import { authManager } from './auth.js';
 import { 
-  collection, 
-  doc, 
-  addDoc, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  limit,
-  serverTimestamp 
+  collection,
+  doc,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { showToast, showLoader, hideLoader } from './ui.js';
 
@@ -79,26 +77,12 @@ export async function getAttemptsForUser(options = {}) {
       limitCount = 50
     } = options;
     
-    let q = collection(db, 'attempts');
-    const constraints = [
-      where('userId', '==', authManager.currentUser.uid),
-      orderBy('attemptedAt', 'desc')
-    ];
-    
-    // Add filters
-    if (subject) {
-      constraints.push(where('subject', '==', subject));
-    }
-    
-    // Note: Date range filtering would require composite indexes
-    // For now, we'll filter client-side
-    
-    // Add limit
-    constraints.push(limit(limitCount));
-    
-    // Build query
-    q = query(q, ...constraints);
-    
+    // Query by user ID only to avoid needing composite indexes
+    const q = query(
+      collection(db, 'attempts'),
+      where('userId', '==', authManager.currentUser.uid)
+    );
+
     const querySnapshot = await getDocs(q);
     let attempts = [];
     
@@ -112,6 +96,11 @@ export async function getAttemptsForUser(options = {}) {
       });
     });
     
+    // Client-side subject filtering
+    if (subject) {
+      attempts = attempts.filter(attempt => attempt.subject === subject);
+    }
+
     // Client-side date filtering if needed
     if (startDate || endDate) {
       attempts = attempts.filter(attempt => {
@@ -121,7 +110,11 @@ export async function getAttemptsForUser(options = {}) {
         return true;
       });
     }
-    
+
+    // Sort by date (newest first) and apply limit
+    attempts.sort((a, b) => b.attemptedAt - a.attemptedAt);
+    attempts = attempts.slice(0, limitCount);
+
     return attempts;
   } catch (error) {
     console.error('Error getting attempts:', error);
