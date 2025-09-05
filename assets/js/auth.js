@@ -4,7 +4,7 @@
  */
 
 import { auth, db } from './firebase.js';
-import { 
+import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -13,7 +13,11 @@ import {
   sendPasswordResetEmail,
   sendEmailVerification,
   onAuthStateChanged,
-  updateProfile
+  updateProfile,
+  setPersistence,
+  browserSessionPersistence,
+  browserLocalPersistence,
+  getIdTokenResult
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 import { 
   doc, 
@@ -29,7 +33,17 @@ class AuthManager {
     this.currentUser = null;
     this.userRole = null;
     this.googleProvider = new GoogleAuthProvider();
+    this._ready = new Promise((resolve) => {
+      this._resolveReady = resolve;
+    });
     this.init();
+  }
+
+  /**
+   * Promise that resolves when auth state and role are ready
+   */
+  ready() {
+    return this._ready;
   }
 
   /**
@@ -52,6 +66,10 @@ class AuthManager {
       }
       
       this.checkAuthRequirement();
+      if (this._resolveReady) {
+        this._resolveReady();
+        this._resolveReady = null;
+      }
     });
   }
 
@@ -60,20 +78,48 @@ class AuthManager {
    */
   async loadUserRole() {
     if (!this.currentUser) return;
-    
+
+    const cacheKey = `userRole:${this.currentUser.uid}`;
+    const cached = localStorage.getItem(cacheKey);
+    const now = Date.now();
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.expires > now) {
+          this.userRole = parsed.role;
+          return;
+        }
+      } catch {}
+    }
+
     try {
-      const userDoc = await getDoc(doc(db, 'users', this.currentUser.uid));
-      if (userDoc.exists()) {
-        this.userRole = userDoc.data().role || 'student';
-      } else {
-        // Create user document if it doesn't exist
-        await this.createUserDocument();
+      const token = await getIdTokenResult(this.currentUser);
+      if (token.claims?.admin) {
+        this.userRole = 'admin';
+      }
+    } catch (e) {
+      console.error('Error checking custom claims:', e);
+    }
+
+    if (!this.userRole) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', this.currentUser.uid));
+        if (userDoc.exists()) {
+          this.userRole = userDoc.data().role || 'student';
+        } else {
+          await this.createUserDocument();
+          this.userRole = 'student';
+        }
+      } catch (error) {
+        console.error('Error loading user role:', error);
         this.userRole = 'student';
       }
-    } catch (error) {
-      console.error('Error loading user role:', error);
-      this.userRole = 'student'; // Default fallback
     }
+
+    localStorage.setItem(cacheKey, JSON.stringify({
+      role: this.userRole,
+      expires: now + 10 * 60 * 1000
+    }));
   }
 
   /**
@@ -143,15 +189,13 @@ class AuthManager {
   /**
    * Sign in with email and password
    */
-  async signIn(email, password) {
+  async signIn(email, password, remember) {
     try {
       showLoader('Signing in...');
-      
+      await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      
       hideLoader();
       showToast('Welcome back!', 'success');
-      
       return userCredential.user;
     } catch (error) {
       hideLoader();
@@ -163,15 +207,13 @@ class AuthManager {
   /**
    * Sign in with Google
    */
-  async signInWithGoogle() {
+  async signInWithGoogle(remember) {
     try {
       showLoader('Signing in with Google...');
-      
+      await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
       const result = await signInWithPopup(auth, this.googleProvider);
-      
       hideLoader();
       showToast('Welcome!', 'success');
-      
       return result.user;
     } catch (error) {
       hideLoader();
@@ -183,9 +225,13 @@ class AuthManager {
   /**
    * Sign out
    */
-  async signOutUser() {
+  async signOut() {
     try {
+      const uid = this.currentUser?.uid;
       await signOut(auth);
+      if (uid) {
+        localStorage.removeItem(`userRole:${uid}`);
+      }
       showToast('Signed out successfully', 'success');
     } catch (error) {
       this.handleAuthError(error);
@@ -397,7 +443,7 @@ window.toggleUserMenu = function() {
 
 window.signOut = function() {
   if (confirm('Are you sure you want to sign out?')) {
-    authManager.signOutUser();
+    authManager.signOut();
   }
 };
 
@@ -447,9 +493,10 @@ document.addEventListener('DOMContentLoaded', function() {
       
       const email = document.getElementById('signin-email').value;
       const password = document.getElementById('signin-password').value;
-      
+      const remember = document.getElementById('signin-remember')?.checked;
+
       try {
-        await authManager.signIn(email, password);
+        await authManager.signIn(email, password, remember);
         authManager.hideAuthModal();
       } catch (error) {
         // Error already handled in signIn method
@@ -478,7 +525,8 @@ document.addEventListener('DOMContentLoaded', function() {
   googleButtons.forEach(button => {
     button.addEventListener('click', async function() {
       try {
-        await authManager.signInWithGoogle();
+        const remember = document.getElementById('signin-remember')?.checked;
+        await authManager.signInWithGoogle(remember);
         authManager.hideAuthModal();
       } catch (error) {
         // Error already handled in signInWithGoogle method
