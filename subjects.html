@@ -289,8 +289,10 @@
 
                 const text = passage.text || passage.content || '';
                 document.getElementById('preview-modal-title').textContent = passage.title || '';
+                const validDiffs = ['easy','medium','hard'];
+                const diff = validDiffs.includes((passage.difficulty || '').toLowerCase()) ? passage.difficulty : 'Unknown';
                 document.getElementById('preview-modal-details').innerHTML = `
-                    <span class="difficulty-badge ${passage.difficulty.toLowerCase()}">${passage.difficulty}</span>
+                    <span class="difficulty-badge ${diff.toLowerCase()}">${diff}</span>
                 `;
                 document.getElementById('preview-modal-text').textContent = text;
 
