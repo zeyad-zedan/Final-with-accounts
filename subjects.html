@@ -164,7 +164,7 @@
 
     <script type="module">
         import { authManager } from './assets/js/auth.js';
-        import { getPublishedPassagesBySubject } from './assets/js/passages.js';
+        import { getPublishedPassagesBySubject, getPassage } from './assets/js/passages.js';
         import { saveAttempt } from './assets/js/attempts.js';
         import { showToast, formatDuration } from './assets/js/ui.js';
 
@@ -254,24 +254,83 @@
         };
 
         // Preview passage
-        window.previewPassage = function(passageId) {
-            // For now, just start the quiz - you could implement a preview mode
-            startQuiz(passageId);
+        window.previewPassage = async function(passageId) {
+            try {
+                const passage = await getPassage(passageId);
+                if (!passage) {
+                    showToast('Passage not found', 'error');
+                    return;
+                }
+
+                let modal = document.getElementById('passage-preview-modal');
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = 'passage-preview-modal';
+                    modal.className = 'modal';
+                    modal.innerHTML = `
+                        <div class="modal-content" style="max-width: 800px; max-height: 90vh;">
+                            <div class="modal-header">
+                                <h3 id="preview-modal-title"></h3>
+                                <button class="modal-close" onclick="closePreviewModal()">&times;</button>
+                            </div>
+                            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                                <div id="preview-modal-details" style="margin-bottom: 1rem;"></div>
+                                <div id="preview-modal-text"></div>
+                            </div>
+                        </div>
+                    `;
+                    modal.addEventListener('click', function(e) {
+                        if (e.target === modal) {
+                            closePreviewModal();
+                        }
+                    });
+                    document.body.appendChild(modal);
+                }
+
+                const text = passage.text || passage.content || '';
+                document.getElementById('preview-modal-title').textContent = passage.title || '';
+
+                const diff = passage.difficulty || 'Unknown';
+                document.getElementById('preview-modal-details').innerHTML = `
+                    <span class="difficulty-badge ${diff.toLowerCase()}">${diff}</span>
+                `;
+                document.getElementById('preview-modal-text').textContent = text;
+
+                modal.classList.add('show');
+            } catch (error) {
+                console.error('Error previewing passage:', error);
+                showToast('Failed to load passage', 'error');
+            }
+        };
+
+        window.closePreviewModal = function() {
+            const modal = document.getElementById('passage-preview-modal');
+            if (modal) {
+                modal.classList.remove('show');
+            }
         };
 
         // Start quiz
         window.startQuiz = async function(passageId) {
             try {
-                // Get passage data
-                const passages = await getPublishedPassagesBySubject('Biology'); // This is a simplified approach
-                // In a real implementation, you'd want a getPassage(passageId) function
-                
-                // For now, redirect to a quiz page or implement inline quiz
-                // This is a simplified implementation
-                showToast('Quiz functionality would be implemented here', 'info');
-                
-                // Example of how you might implement an inline quiz:
-                // loadQuizInModal(passageId);
+                const passage = await getPassage(passageId);
+                if (!passage) {
+                    showToast('Passage not found', 'error');
+                    return;
+                }
+
+                const cachedKey = 'studysphere.passages.v1';
+                const passages = JSON.parse(localStorage.getItem(cachedKey) || '[]');
+                const normalized = { ...passage, text: passage.text || passage.content || '' };
+                const index = passages.findIndex(p => p.id === passageId);
+                if (index >= 0) {
+                    passages[index] = normalized;
+                } else {
+                    passages.push(normalized);
+                }
+                localStorage.setItem(cachedKey, JSON.stringify(passages));
+
+                window.location.href = `quiz.html?passage=${passageId}`;
             } catch (error) {
                 console.error('Error starting quiz:', error);
                 showToast('Failed to start quiz', 'error');
