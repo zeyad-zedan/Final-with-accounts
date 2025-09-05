@@ -289,10 +289,22 @@
 
                 const text = passage.text || passage.content || '';
                 document.getElementById('preview-modal-title').textContent = passage.title || '';
+ codex/sanitize-difficulty-badge-in-previewpassage
                 const validDiffs = ['easy','medium','hard'];
                 const diff = validDiffs.includes((passage.difficulty || '').toLowerCase()) ? passage.difficulty : 'Unknown';
                 document.getElementById('preview-modal-details').innerHTML = `
                     <span class="difficulty-badge ${diff.toLowerCase()}">${diff}</span>
+
+ codex/update-passage-handling-in-subjects.html-y2qshh
+
+                const diff = passage.difficulty || 'Unknown';
+                document.getElementById('preview-modal-details').innerHTML = `
+                    <span class="difficulty-badge ${diff.toLowerCase()}">${diff}</span>
+
+                document.getElementById('preview-modal-details').innerHTML = `
+                    <span class="difficulty-badge ${passage.difficulty.toLowerCase()}">${passage.difficulty}</span>
+ main
+ main
                 `;
                 document.getElementById('preview-modal-text').textContent = text;
 
